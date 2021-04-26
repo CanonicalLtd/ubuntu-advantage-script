@@ -425,8 +425,7 @@ Renew your UA services at {url}
 
 MESSAGE_CONTRACT_EXPIRED_APT_PKGS_TMPL = """\
 *Your {title} subscription has EXPIRED*
-Enabling {title} service would provide security updates for following
-packages:
+Enabling {title} service would provide security updates for following packages:
   {pkg_names}
 {pkg_num} {name} security update(s) NOT APPLIED. Renew your UA services at
 {url}
@@ -434,7 +433,6 @@ packages:
 
 MESSAGE_DISABLED_MOTD_NO_PKGS_TMPL = """\
 Enable {title} to receive additional future security updates.
-
 See {url} or run: sudo ua status
 """
 
@@ -447,11 +445,10 @@ MESSAGE_CONTRACT_EXPIRED_APT_NO_PKGS_TMPL = (
 
 
 MESSAGE_DISABLED_APT_PKGS_TMPL = """\
-*The following packages could receive security updates with
- {title} service enabled:
+*The following packages could receive security updates with {title} service enabled:
   {pkg_names}
 Learn more about {title} service at {url}
-"""
+"""  # noqa: E501
 
 MESSAGE_UBUNTU_NO_WARRANTY = """\
 Ubuntu comes with ABSOLUTELY NO WARRANTY, to the extent permitted by
