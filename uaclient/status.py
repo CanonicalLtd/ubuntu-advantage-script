@@ -365,7 +365,7 @@ MESSAGE_REFRESH_FAILURE = "Unable to refresh your subscription"
 MESSAGE_INCOMPATIBLE_SERVICE = """\
 {service_being_enabled} cannot be enabled with {incompatible_service}.
 Disable {incompatible_service} and proceed to enable {service_being_enabled}? \
-(y/N)"""
+(y/N) """
 
 MESSAGE_INCOMPATIBLE_SERVICE_STOPS_ENABLE = """\
 Cannot enable {service_being_enabled} when {incompatible_service} is enabled.
@@ -445,10 +445,11 @@ MESSAGE_CONTRACT_EXPIRED_APT_NO_PKGS_TMPL = (
 
 
 MESSAGE_DISABLED_APT_PKGS_TMPL = """\
-*The following packages could receive security updates with {title} service enabled:
+*The following packages could receive security updates \
+with {title} service enabled:
   {pkg_names}
 Learn more about {title} service at {url}
-"""  # noqa: E501
+"""
 
 MESSAGE_UBUNTU_NO_WARRANTY = """\
 Ubuntu comes with ABSOLUTELY NO WARRANTY, to the extent permitted by

@@ -65,21 +65,31 @@ class TestGetContractExpiryStatus:
 
 class TestWriteAPTAndMOTDTemplates:
     @pytest.mark.parametrize(
-        "series,is_active_esm,esm_apps_beta,esm_infra_enabled,cfg_allow_beta",
+        "series,is_active_esm,contract_days,infra_enabled,"
+        "esm_apps_beta,cfg_allow_beta,show_infra,show_apps",
         (
-            ("xenial", True, True, True, None),
-            ("xenial", True, True, False, None),
-            ("xenial", True, False, True, None),
-            ("xenial", False, True, False, None),
-            ("xenial", True, True, True, True),
-            ("xenial", True, True, False, True),
+            # Enabled infra, active contract, beta apps: show none
+            ("xenial", True, 21, True, True, None, False, False),
+            # Not enabled infra, beta apps: show infra msg
+            ("xenial", True, -21, False, True, None, True, False),
+            # Any *expired contract, infra enabled, beta apps: show infra msg
+            ("xenial", True, 20, True, True, None, True, False),
+            ("xenial", True, 0, True, True, None, True, False),
+            ("xenial", True, -1, True, True, None, True, False),
+            ("xenial", True, -21, True, True, None, True, False),
+            # Infra enabled, any *expired contract, allow_beta: show infra msg
+            ("xenial", True, 20, True, True, True, True, False),
+            # Infra enabled, active contract, allow_beta: show apps msg
+            ("xenial", True, 21, True, True, True, False, True),
+            # Infra enabled, active contract, apps not beta: show apps msg
+            ("xenial", True, 21, True, False, None, False, True),
         ),
     )
     @mock.patch(M_PATH + "entitlements")
     @mock.patch(M_PATH + "_write_esm_service_msg_templates")
     @mock.patch(M_PATH + "util.is_active_esm")
     @mock.patch(M_PATH + "get_contract_expiry_status")
-    def test_write_apps_and_infra_services(
+    def test_write_apps_or_infra_services(
         self,
         get_contract_expiry_status,
         util_is_active_esm,
@@ -87,21 +97,27 @@ class TestWriteAPTAndMOTDTemplates:
         entitlements,
         series,
         is_active_esm,
+        contract_days,
+        infra_enabled,
         esm_apps_beta,
-        esm_infra_enabled,
         cfg_allow_beta,
+        show_infra,
+        show_apps,
         FakeConfig,
     ):
-        """Write both Infra and Apps when not-beta service."""
+        """Write Infra or Apps when Apps not-beta service.
+
+        Messaging is mutually exclusive, if Infra templates are emitted, don't
+        write Apps.
+        """
         get_contract_expiry_status.return_value = (
             ContractExpiryStatus.ACTIVE,
-            21,
+            contract_days,
         )
-
-        infra_status = ApplicationStatus.DISABLED
-        if esm_infra_enabled:
+        if infra_enabled:
             infra_status = ApplicationStatus.ENABLED
-
+        else:
+            infra_status = ApplicationStatus.DISABLED
         util_is_active_esm.return_value = is_active_esm
         infra_cls = mock.MagicMock()
         infra_obj = infra_cls.return_value
@@ -118,36 +134,32 @@ class TestWriteAPTAndMOTDTemplates:
         cfg = FakeConfig.for_attached_machine()
         if cfg_allow_beta:
             cfg.override_features({"allow_beta": cfg_allow_beta})
-        if cfg_allow_beta or not esm_apps_beta:
-            write_calls = [
-                mock.call(
-                    cfg,
-                    mock.ANY,
-                    ContractExpiryStatus.ACTIVE,
-                    21,
-                    ExternalMessage.APT_PRE_INVOKE_APPS_PKGS.value,
-                    ExternalMessage.APT_PRE_INVOKE_APPS_NO_PKGS.value,
-                    ExternalMessage.MOTD_APPS_PKGS.value,
-                    ExternalMessage.MOTD_APPS_NO_PKGS.value,
-                    ExternalMessage.UBUNTU_NO_WARRANTY.value,
-                )
-            ]
-        else:
-            write_calls = []
-        if esm_infra_enabled or is_active_esm:
-            write_calls.append(
-                mock.call(
-                    cfg,
-                    mock.ANY,
-                    ContractExpiryStatus.ACTIVE,
-                    21,
-                    ExternalMessage.APT_PRE_INVOKE_INFRA_PKGS.value,
-                    ExternalMessage.APT_PRE_INVOKE_INFRA_NO_PKGS.value,
-                    ExternalMessage.MOTD_INFRA_PKGS.value,
-                    ExternalMessage.MOTD_INFRA_NO_PKGS.value,
-                    ExternalMessage.UBUNTU_NO_WARRANTY.value,
-                )
-            )
+        write_calls = [
+            mock.call(
+                cfg,
+                mock.ANY,
+                ContractExpiryStatus.ACTIVE,
+                contract_days,
+                ExternalMessage.APT_PRE_INVOKE_INFRA_PKGS.value,
+                ExternalMessage.APT_PRE_INVOKE_INFRA_NO_PKGS.value,
+                ExternalMessage.MOTD_INFRA_PKGS.value,
+                ExternalMessage.MOTD_INFRA_NO_PKGS.value,
+                ExternalMessage.UBUNTU_NO_WARRANTY.value,
+                remove_template_files=not show_infra,
+            ),
+            mock.call(
+                cfg,
+                mock.ANY,
+                ContractExpiryStatus.ACTIVE,
+                contract_days,
+                ExternalMessage.APT_PRE_INVOKE_APPS_PKGS.value,
+                ExternalMessage.APT_PRE_INVOKE_APPS_NO_PKGS.value,
+                ExternalMessage.MOTD_APPS_PKGS.value,
+                ExternalMessage.MOTD_APPS_NO_PKGS.value,
+                ExternalMessage.UBUNTU_NO_WARRANTY.value,
+                remove_template_files=not show_apps,
+            ),
+        ]
         write_apt_and_motd_templates(cfg, series)
         assert [mock.call(cfg)] == get_contract_expiry_status.call_args_list
         assert write_calls == write_esm_service_templates.call_args_list

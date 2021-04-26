@@ -105,13 +105,38 @@ def _write_esm_service_msg_templates(
     motd_pkgs_file: str,
     motd_no_pkgs_file: str,
     no_warranty_file: str,
+    remove_template_files: bool = False,
 ):
+    """Write any related template content for an ESM service.
 
+    If no content is applicable for the current service state, remove
+    all service-related template files.
+
+    :param cfg: UAConfig instance for this environment.
+    :param ent: entitlements.base.UAEntitlement,
+    :param expiry_status: Current ContractExpiryStatus enum for attached VM.
+    :param remaining_days: Int remaining days on contrat, negative when
+        expired.
+    :param *_file: template file names to write.
+
+    :param remove_template files: True when all related template should be
+        removed.
+    """
     pkgs_msg = no_pkgs_msg = motd_pkgs_msg = motd_no_pkgs_msg = ""
     no_warranty_msg = ""
     tmpl_prefix = ent.name.upper().replace("-", "_")
     tmpl_pkg_count_var = "{{{}_PKG_COUNT}}".format(tmpl_prefix)
     tmpl_pkg_names_var = "{{{}_PACKAGES}}".format(tmpl_prefix)
+    msg_dir = os.path.join(cfg.data_dir, "messages")
+    if remove_template_files:
+        # Purge all template out output messages for this service
+        _write_template_or_remove("", os.path.join(msg_dir, no_warranty_file))
+        _write_template_or_remove("", os.path.join(msg_dir, no_pkgs_file))
+        _write_template_or_remove("", os.path.join(msg_dir, pkgs_file))
+        _write_template_or_remove("", os.path.join(msg_dir, motd_no_pkgs_file))
+        _write_template_or_remove("", os.path.join(msg_dir, motd_pkgs_file))
+        return
+
     if ent.application_status()[0] == ApplicationStatus.ENABLED:
         if expiry_status == ContractExpiryStatus.ACTIVE_EXPIRED_SOON:
             pkgs_msg = MESSAGE_CONTRACT_EXPIRED_SOON_TMPL.format(
@@ -163,7 +188,6 @@ def _write_esm_service_msg_templates(
             title=ent.title, url=defaults.BASE_ESM_URL
         )
 
-    msg_dir = os.path.join(cfg.data_dir, "messages")
     _write_template_or_remove(
         no_warranty_msg, os.path.join(msg_dir, no_warranty_file)
     )
@@ -198,43 +222,49 @@ def write_apt_and_motd_templates(cfg: config.UAConfig, series: str) -> None:
     config_allow_beta = util.is_config_value_true(
         config=cfg.cfg, path_to_value="features.allow_beta"
     )
-    apps_not_beta = bool(config_allow_beta or not apps_cls.is_beta)
+    apps_valid = bool(config_allow_beta or not apps_cls.is_beta)
     infra_cls = entitlements.ENTITLEMENT_CLASS_BY_NAME["esm-infra"]
     infra_inst = infra_cls(cfg)
 
     expiry_status, remaining_days = get_contract_expiry_status(cfg)
 
-    if series != "trusty" and apps_not_beta:
-        _write_esm_service_msg_templates(
-            cfg,
-            apps_inst,
-            expiry_status,
-            remaining_days,
-            apps_pkg_file,
-            apps_no_pkg_file,
-            motd_apps_pkg_file,
-            motd_apps_no_pkg_file,
-            no_warranty_file,
-        )
+    enabled_status = ApplicationStatus.ENABLED
+    msg_esm_apps = False
+    msg_esm_infra = False
+    if util.is_active_esm(series):
+        if infra_inst.application_status()[0] != enabled_status:
+            msg_esm_infra = True
+        elif remaining_days <= defaults.CONTRACT_EXPIRY_PENDING_DAYS:
+            msg_esm_infra = True
+    if not msg_esm_infra and series != "trusty":
+        # write_apt_and_motd_templates is only called if util.is_lts(series)
+        msg_esm_apps = apps_valid
 
-    # We only have esm-infra apt alerts for esm distros.
-    # However, if we have expired credentials, we will
-    # produce esm-infra message showing that the contract is
-    # expiring/expired.
-    infra_status, _ = infra_inst.application_status()
-    is_infra_enabled = infra_status == ApplicationStatus.ENABLED
-    if is_infra_enabled or util.is_active_esm(series):
-        _write_esm_service_msg_templates(
-            cfg,
-            infra_inst,
-            expiry_status,
-            remaining_days,
-            infra_pkg_file,
-            infra_no_pkg_file,
-            motd_infra_pkg_file,
-            motd_infra_no_pkg_file,
-            no_warranty_file,
-        )
+    _write_esm_service_msg_templates(
+        cfg,
+        infra_inst,
+        expiry_status,
+        remaining_days,
+        infra_pkg_file,
+        infra_no_pkg_file,
+        motd_infra_pkg_file,
+        motd_infra_no_pkg_file,
+        no_warranty_file,
+        remove_template_files=not msg_esm_infra,
+    )
+
+    _write_esm_service_msg_templates(
+        cfg,
+        apps_inst,
+        expiry_status,
+        remaining_days,
+        apps_pkg_file,
+        apps_no_pkg_file,
+        motd_apps_pkg_file,
+        motd_apps_no_pkg_file,
+        no_warranty_file,
+        remove_template_files=not msg_esm_apps,
+    )
 
 
 def write_esm_announcement_message(cfg: config.UAConfig, series: str) -> None:
