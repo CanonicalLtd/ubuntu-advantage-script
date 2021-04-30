@@ -5,6 +5,8 @@ import logging
 import re
 import yaml
 
+from uaclient.util import is_config_value_true
+
 try:
     from typing import Any, Callable, Dict, List, Optional, Tuple  # noqa: F401
 
@@ -98,7 +100,10 @@ class UAEntitlement(metaclass=abc.ABCMeta):
         return self._incompatible_services
 
     def __init__(
-        self, cfg: "Optional[config.UAConfig]" = None, assume_yes: bool = False
+        self,
+        cfg: "Optional[config.UAConfig]" = None,
+        assume_yes: bool = False,
+        allow_beta: bool = False,
     ) -> None:
         """Setup UAEntitlement instance
 
@@ -108,6 +113,20 @@ class UAEntitlement(metaclass=abc.ABCMeta):
             cfg = config.UAConfig()
         self.cfg = cfg
         self.assume_yes = assume_yes
+        self.allow_beta = allow_beta
+        self._valid_service = None
+
+    @property
+    def valid_service(self):
+        """Check if the service is marked as valid (non-beta)"""
+        if self._valid_service is None:
+            self._valid_service = (
+                not self.is_beta
+                or self.allow_beta
+                or is_config_value_true(self.cfg.cfg, "features.allow_beta")
+            )
+
+        return self._valid_service
 
     @abc.abstractmethod
     def enable(self, *, silent_if_inapplicable: bool = False) -> bool:
@@ -138,12 +157,22 @@ class UAEntitlement(metaclass=abc.ABCMeta):
             return False
         return True
 
-    def can_enable(self, silent: bool = False) -> bool:
+    def can_enable(
+        self, silent: bool = False, enable_by_default: bool = False
+    ) -> bool:
         """
         Report whether or not enabling is possible for the entitlement.
 
+        :param enable_by_default: If True, do not stop enable if service
+                                  is marked as beta
         :param silent: if True, suppress output
         """
+
+        # If the contract needs to enable a beta service by default,
+        # we will not stop it here
+        if not self.valid_service and not enable_by_default:
+            return False
+
         if self.is_access_expired():
             logging.debug(
                 "Updating contract on service '%s' expiry", self.name
@@ -444,11 +473,15 @@ class UAEntitlement(metaclass=abc.ABCMeta):
         if not resourceToken:
             resourceToken = deltas.get("resourceToken")
         delta_obligations = delta_entitlement.get("obligations", {})
-        can_enable = self.can_enable(silent=True)
-        enableByDefault = bool(
+        enable_by_default = bool(
             delta_obligations.get("enableByDefault") and resourceToken
         )
-        if can_enable and enableByDefault:
+
+        if enable_by_default:
+            self.allow_beta = True
+
+        can_enable = self.can_enable(silent=True)
+        if can_enable and enable_by_default:
             if allow_enable:
                 msg = status.MESSAGE_ENABLE_BY_DEFAULT_TMPL.format(
                     name=self.name

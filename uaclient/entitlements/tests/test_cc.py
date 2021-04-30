@@ -92,7 +92,7 @@ class TestCommonCriteriaEntitlementCanEnable:
         m_platform_info.return_value = PLATFORM_INFO_SUPPORTED
         cfg = config.UAConfig(cfg={"data_dir": tmpdir.strpath})
         cfg.write_cache("machine-token", CC_MACHINE_TOKEN)
-        entitlement = CommonCriteriaEntitlement(cfg)
+        entitlement = CommonCriteriaEntitlement(cfg, allow_beta=True)
         uf_status, uf_status_details = entitlement.user_facing_status()
         assert status.UserFacingStatus.INACTIVE == uf_status
         details = "{} is not configured".format(entitlement.title)
@@ -145,7 +145,7 @@ class TestCommonCriteriaEntitlementEnable:
         m_platform_info.side_effect = fake_platform
         cfg = config.UAConfig(cfg={"data_dir": tmpdir.strpath})
         cfg.write_cache("machine-token", CC_MACHINE_TOKEN)
-        entitlement = CommonCriteriaEntitlement(cfg)
+        entitlement = CommonCriteriaEntitlement(cfg, allow_beta=True)
 
         with mock.patch("uaclient.apt.add_auth_apt_repo") as m_add_apt:
             with mock.patch("uaclient.apt.add_ppa_pinning") as m_add_pin:

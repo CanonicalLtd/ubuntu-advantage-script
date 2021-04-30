@@ -11,7 +11,7 @@ from uaclient import util
 from uaclient.status import ContractStatus
 
 try:
-    from typing import Tuple  # noqa
+    from typing import Dict, Optional, Tuple  # noqa
 except ImportError:
     pass
 
@@ -29,8 +29,9 @@ class ConcreteTestEntitlement(base.UAEntitlement):
         enable=None,
         applicability_status=None,
         application_status=None,
+        allow_beta=False,
     ):
-        super().__init__(cfg)
+        super().__init__(cfg, allow_beta=allow_beta)
         self._disable = disable
         self._enable = enable
         self._applicability_status = applicability_status
@@ -59,7 +60,9 @@ def concrete_entitlement_factory(tmpdir):
         *,
         entitled: bool,
         applicability_status: "Tuple[status.ApplicabilityStatus, str]" = None,
-        application_status: "Tuple[status.ApplicationStatus, str]" = None
+        application_status: "Tuple[status.ApplicationStatus, str]" = None,
+        feature_overrides: "Optional[Dict[str, str]]" = None,
+        allow_beta: bool = False
     ) -> ConcreteTestEntitlement:
         cfg = config.UAConfig(cfg={"data_dir": tmpdir.strpath})
         machineToken = {
@@ -76,10 +79,15 @@ def concrete_entitlement_factory(tmpdir):
             },
         }
         cfg.write_cache("machine-token", machineToken)
+
+        if feature_overrides:
+            cfg.cfg.update({"features": feature_overrides})
+
         return ConcreteTestEntitlement(
             cfg,
             applicability_status=applicability_status,
             application_status=application_status,
+            allow_beta=allow_beta,
         )
 
     return factory
@@ -253,6 +261,29 @@ class TestUaEntitlement:
 
         stdout, _ = capsys.readouterr()
         assert "" == stdout
+
+    @pytest.mark.parametrize("is_beta", (True, False))
+    @pytest.mark.parametrize("allow_beta", (True, False))
+    @pytest.mark.parametrize("allow_beta_cfg", (True, False))
+    def test_can_enable_on_beta_service(
+        self, allow_beta_cfg, allow_beta, is_beta, concrete_entitlement_factory
+    ):
+
+        feature_overrides = {"allow_beta": allow_beta_cfg}
+        entitlement = concrete_entitlement_factory(
+            entitled=True,
+            applicability_status=(status.ApplicabilityStatus.APPLICABLE, ""),
+            application_status=(status.ApplicationStatus.DISABLED, ""),
+            feature_overrides=feature_overrides,
+            allow_beta=allow_beta,
+        )
+        entitlement.is_beta = is_beta
+        can_enable = entitlement.can_enable()
+
+        if not is_beta or allow_beta or allow_beta_cfg:
+            assert can_enable
+        else:
+            assert not can_enable
 
     def test_contract_status_entitled(self, concrete_entitlement_factory):
         """The contract_status returns ENTITLED when entitlement enabled."""
@@ -430,6 +461,45 @@ class TestUaEntitlement:
             status.ApplicationStatus.DISABLED,
             mock.ANY,
         ) == entitlement.application_status()
+
+    @pytest.mark.parametrize(
+        "orig_access,delta",
+        (
+            (
+                {
+                    "resourceToken": "test",
+                    "entitlement": {
+                        "entitled": True,
+                        "obligations": {"enableByDefault": False},
+                    },
+                },
+                {
+                    "entitlement": {
+                        "entitled": True,
+                        "obligations": {"enableByDefault": True},
+                    }
+                },
+            ),
+        ),
+    )
+    def test_process_contract_deltas_enable_beta_if_enabled_by_default_turned(
+        self, concrete_entitlement_factory, orig_access, delta
+    ):
+        """Disable when deltas transition from active to unentitled."""
+        entitlement = concrete_entitlement_factory(
+            entitled=True,
+            applicability_status=(status.ApplicabilityStatus.APPLICABLE, ""),
+            application_status=(status.ApplicationStatus.DISABLED, ""),
+        )
+        entitlement.is_beta = True
+        assert not entitlement.allow_beta
+        with mock.patch.object(entitlement, "enable") as m_enable:
+            entitlement.process_contract_deltas(
+                orig_access, delta, allow_enable=True
+            )
+            assert 1 == m_enable.call_count
+
+        assert entitlement.allow_beta
 
 
 class TestUaEntitlementUserFacingStatus:

@@ -97,6 +97,7 @@ def entitlement_factory(tmpdir):
         directives: "Dict[str, Any]" = None,
         obligations: "Dict[str, Any]" = None,
         entitled: bool = True,
+        allow_beta: bool = False,
         assume_yes: "Optional[bool]" = None,
         suites: "List[str]" = None,
         additional_packages: "List[str]" = None
@@ -114,7 +115,7 @@ def entitlement_factory(tmpdir):
                 additional_packages=additional_packages,
             ),
         )
-        args = {}
+        args = {"allow_beta": allow_beta}
         if assume_yes is not None:
             args["assume_yes"] = assume_yes
         return cls(cfg, **args)

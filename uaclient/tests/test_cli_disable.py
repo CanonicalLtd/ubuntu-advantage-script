@@ -10,7 +10,7 @@ from uaclient import status
 
 ALL_SERVICE_MSG = "\n".join(
     textwrap.wrap(
-        "Try " + entitlements.ALL_ENTITLEMENTS_STR + ".",
+        "Try " + ", ".join(entitlements.valid_services(allow_beta=True)) + ".",
         width=80,
         break_long_words=False,
     )
@@ -98,9 +98,11 @@ class TestDisable:
         assert len(entitlements_cls) == m_cfg.status.call_count
 
     @pytest.mark.parametrize("assume_yes", (True, False))
-    @mock.patch("uaclient.cli.entitlements")
+    @mock.patch(
+        "uaclient.entitlements.is_config_value_true", return_value=False
+    )
     def test_entitlements_not_found_disabled_and_enabled(
-        self, m_entitlements, _m_getuid, assume_yes, tmpdir
+        self, _m_is_config_value_true, _m_getuid, assume_yes, tmpdir
     ):
         expected_error_tmpl = status.MESSAGE_INVALID_SERVICE_OP_FAILURE_TMPL
         num_calls = 2
@@ -117,12 +119,7 @@ class TestDisable:
         m_ent3_obj = m_ent3_cls.return_value
         m_ent3_obj.disable.return_value = True
 
-        m_entitlements.ENTITLEMENT_CLASS_BY_NAME = {
-            "ent2": m_ent2_cls,
-            "ent3": m_ent3_cls,
-        }
-        m_entitlements.ALL_ENTITLEMENTS_STR = "ent2, ent3"
-        m_entitlements.RELEASED_ENTITLEMENTS_STR = "ent2, ent3"
+        m_ents_dict = {"ent2": m_ent2_cls, "ent3": m_ent3_cls}
 
         m_cfg = mock.Mock()
         m_cfg.check_lock_info.return_value = (-1, "")
@@ -131,8 +128,11 @@ class TestDisable:
         args_mock.service = ["ent1", "ent2", "ent3"]
         args_mock.assume_yes = assume_yes
 
-        with pytest.raises(exceptions.UserFacingError) as err:
-            action_disable(args_mock, m_cfg)
+        with mock.patch.object(
+            entitlements, "ENTITLEMENT_CLASS_BY_NAME", m_ents_dict
+        ):
+            with pytest.raises(exceptions.UserFacingError) as err:
+                action_disable(args_mock, m_cfg)
 
         assert (
             expected_error_tmpl.format(
