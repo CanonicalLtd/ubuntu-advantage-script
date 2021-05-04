@@ -94,6 +94,13 @@ Feature: Enable command behaviour when attached to an UA staging subscription
 
         esm-infra(-no)? \d+.*
         """
+        When I verify that running `ua enable esm-apps` `with sudo` exits `1`
+        Then stdout matches regexp
+        """
+        One moment, checking your subscription first
+        UA Apps: ESM is already enabled.
+        See: sudo ua status
+        """
 
         Examples: ubuntu release
            | release | apps-pkg |
@@ -368,6 +375,13 @@ Feature: Enable command behaviour when attached to an UA staging subscription
         And stdout matches regexp:
         """
         \s* 500 https://esm.staging.ubuntu.com/cis/ubuntu <release>/main amd64 Packages
+        """
+        When I verify that running `ua enable cis` `with sudo` exits `1`
+        Then stdout matches regexp
+        """
+        One moment, checking your subscription first
+        CIS Audit is already enabled.
+        See: sudo ua status
         """
 
         Examples: not entitled services
