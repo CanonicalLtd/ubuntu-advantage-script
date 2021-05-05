@@ -104,7 +104,6 @@ def _write_esm_service_msg_templates(
     no_pkgs_file: str,
     motd_pkgs_file: str,
     motd_no_pkgs_file: str,
-    no_warranty_file: str,
     remove_template_files: bool = False,
 ):
     """Write any related template content for an ESM service.
@@ -123,20 +122,29 @@ def _write_esm_service_msg_templates(
         removed.
     """
     pkgs_msg = no_pkgs_msg = motd_pkgs_msg = motd_no_pkgs_msg = ""
-    no_warranty_msg = ""
     tmpl_prefix = ent.name.upper().replace("-", "_")
     tmpl_pkg_count_var = "{{{}_PKG_COUNT}}".format(tmpl_prefix)
     tmpl_pkg_names_var = "{{{}_PACKAGES}}".format(tmpl_prefix)
     msg_dir = os.path.join(cfg.data_dir, "messages")
     if remove_template_files:
         # Purge all template out output messages for this service
-        _write_template_or_remove("", os.path.join(msg_dir, no_warranty_file))
         _write_template_or_remove("", os.path.join(msg_dir, no_pkgs_file))
         _write_template_or_remove("", os.path.join(msg_dir, pkgs_file))
         _write_template_or_remove("", os.path.join(msg_dir, motd_no_pkgs_file))
         _write_template_or_remove("", os.path.join(msg_dir, motd_pkgs_file))
         return
 
+    platform_info = util.get_platform_info()
+    is_active_esm = util.is_active_esm(platform_info["series"])
+    if is_active_esm and ent.name == "esm-infra":
+        release = platform_info["release"]
+        ua_esm_url = defaults.EOL_UA_URL_TMPL.format(
+            hyphenatedrelease=platform_info["release"].replace(".", "-")
+        )
+        eol_release = "for Ubuntu {release} ".format(release=release)
+    else:
+        eol_release = ""
+        ua_esm_url = defaults.BASE_ESM_URL
     if ent.application_status()[0] == ApplicationStatus.ENABLED:
         if expiry_status == ContractExpiryStatus.ACTIVE_EXPIRED_SOON:
             pkgs_msg = MESSAGE_CONTRACT_EXPIRED_SOON_TMPL.format(
@@ -159,8 +167,6 @@ def _write_esm_service_msg_templates(
             # Same cautionary message when in grace period
             motd_pkgs_msg = motd_no_pkgs_msg = no_pkgs_msg = pkgs_msg
         elif expiry_status == ContractExpiryStatus.EXPIRED:
-            if util.is_active_esm(util.get_platform_info()["series"]):
-                no_warranty_msg = MESSAGE_UBUNTU_NO_WARRANTY
             pkgs_msg = MESSAGE_CONTRACT_EXPIRED_APT_PKGS_TMPL.format(
                 pkg_num=tmpl_pkg_count_var,
                 pkg_names=tmpl_pkg_names_var,
@@ -169,28 +175,26 @@ def _write_esm_service_msg_templates(
                 url=defaults.BASE_UA_URL,
             )
             no_pkgs_msg = MESSAGE_CONTRACT_EXPIRED_APT_NO_PKGS_TMPL.format(
-                title=ent.title, url=defaults.BASE_ESM_URL
+                title=ent.title, url=defaults.BASE_UA_URL
             )
             motd_no_pkgs_msg = no_pkgs_msg
             motd_pkgs_msg = MESSAGE_CONTRACT_EXPIRED_MOTD_PKGS_TMPL.format(
                 title=ent.title,
                 pkg_num=tmpl_pkg_count_var,
-                url=defaults.BASE_ESM_URL,
+                url=defaults.BASE_UA_URL,
             )
     elif expiry_status != ContractExpiryStatus.EXPIRED:  # Service not enabled
         pkgs_msg = MESSAGE_DISABLED_APT_PKGS_TMPL.format(
             title=ent.title,
             pkg_num=tmpl_pkg_count_var,
             pkg_names=tmpl_pkg_names_var,
-            url=defaults.BASE_ESM_URL,
+            eol_release=eol_release,
+            url=ua_esm_url,
         )
         no_pkgs_msg = MESSAGE_DISABLED_MOTD_NO_PKGS_TMPL.format(
-            title=ent.title, url=defaults.BASE_ESM_URL
+            title=ent.title, url=ua_esm_url
         )
 
-    _write_template_or_remove(
-        no_warranty_msg, os.path.join(msg_dir, no_warranty_file)
-    )
     _write_template_or_remove(no_pkgs_msg, os.path.join(msg_dir, no_pkgs_file))
     _write_template_or_remove(pkgs_msg, os.path.join(msg_dir, pkgs_file))
     _write_template_or_remove(
@@ -216,6 +220,7 @@ def write_apt_and_motd_templates(cfg: config.UAConfig, series: str) -> None:
     motd_infra_no_pkg_file = ExternalMessage.MOTD_INFRA_NO_PKGS.value
     motd_infra_pkg_file = ExternalMessage.MOTD_INFRA_PKGS.value
     no_warranty_file = ExternalMessage.UBUNTU_NO_WARRANTY.value
+    msg_dir = os.path.join(cfg.data_dir, "messages")
 
     apps_cls = entitlements.ENTITLEMENT_CLASS_BY_NAME["esm-apps"]
     apps_inst = apps_cls(cfg)
@@ -232,6 +237,16 @@ def write_apt_and_motd_templates(cfg: config.UAConfig, series: str) -> None:
     msg_esm_apps = False
     msg_esm_infra = False
     if util.is_active_esm(series):
+        if expiry_status in (
+            ContractExpiryStatus.EXPIRED,
+            ContractExpiryStatus.NONE,
+        ):
+            no_warranty_msg = MESSAGE_UBUNTU_NO_WARRANTY
+        else:
+            no_warranty_msg = ""
+        _write_template_or_remove(
+            no_warranty_msg, os.path.join(msg_dir, no_warranty_file)
+        )
         if infra_inst.application_status()[0] != enabled_status:
             msg_esm_infra = True
         elif remaining_days <= defaults.CONTRACT_EXPIRY_PENDING_DAYS:
@@ -249,7 +264,6 @@ def write_apt_and_motd_templates(cfg: config.UAConfig, series: str) -> None:
         infra_no_pkg_file,
         motd_infra_pkg_file,
         motd_infra_no_pkg_file,
-        no_warranty_file,
         remove_template_files=not msg_esm_infra,
     )
 
@@ -262,7 +276,6 @@ def write_apt_and_motd_templates(cfg: config.UAConfig, series: str) -> None:
         apps_no_pkg_file,
         motd_apps_pkg_file,
         motd_apps_no_pkg_file,
-        no_warranty_file,
         remove_template_files=not msg_esm_apps,
     )
 

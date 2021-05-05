@@ -448,7 +448,7 @@ MESSAGE_DISABLED_APT_PKGS_TMPL = """\
 *The following packages could receive security updates \
 with {title} service enabled:
   {pkg_names}
-Learn more about {title} service at {url}
+Learn more about {title} service {eol_release}at {url}
 """
 
 MESSAGE_UBUNTU_NO_WARRANTY = """\
