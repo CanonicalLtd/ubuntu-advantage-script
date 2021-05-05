@@ -350,6 +350,8 @@ Feature: Enable command behaviour when attached to an UA staging subscription
             Updating package lists
             Installing CIS Audit packages
             CIS Audit enabled
+            Refer to /usr/share/doc/usg-common/README.audit.gz on how to run an audit scan of the system
+            Refer to /usr/share/doc/usg-cisbenchmark/README.hardening.gz on how to harden the system to the desired CIS compliance level
             """
         When I run `apt-cache policy usg-cisbenchmark` as non-root
         Then stdout does not match regexp:
