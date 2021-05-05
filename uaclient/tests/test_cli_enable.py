@@ -18,7 +18,7 @@ Enable an Ubuntu Advantage service.
 
 Arguments:
   service       the name(s) of the Ubuntu Advantage services to enable. One
-                of: esm-infra, fips, fips-updates, livepatch
+                of: esm-apps, esm-infra, fips, fips-updates, livepatch
 
 Flags:
   -h, --help    show this help message and exit

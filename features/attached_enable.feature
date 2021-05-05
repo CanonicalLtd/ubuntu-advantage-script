@@ -142,7 +142,7 @@ Feature: Enable command behaviour when attached to an UA subscription
             This subscription is not entitled to CIS Audit
             For more information see: https://ubuntu.com/advantage.
             """
-        And I verify that running `ua enable esm-apps --beta` `with sudo` exits `1`
+        And I verify that running `ua enable esm-apps` `with sudo` exits `1`
         And I will see the following on stdout:
             """
             One moment, checking your subscription first

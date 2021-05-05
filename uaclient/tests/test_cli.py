@@ -61,6 +61,8 @@ Client to manage Ubuntu Advantage services on a machine.
 SERVICES_WRAPPED_HELP = textwrap.dedent(
     """
 Client to manage Ubuntu Advantage services on a machine.
+ - esm-apps: UA Apps: Extended Security Maintenance (ESM)
+   (https://ubuntu.com/security/esm)
  - esm-infra: UA Infra: Extended Security Maintenance (ESM)
    (https://ubuntu.com/security/esm)
  - fips-updates: Uncertified security updates to FIPS modules

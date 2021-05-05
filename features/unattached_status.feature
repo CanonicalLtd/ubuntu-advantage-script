@@ -7,6 +7,7 @@ Feature: Unattached status
         Then stdout matches regexp:
             """
             SERVICE       AVAILABLE  DESCRIPTION
+            esm-apps      <esm-apps>  +UA Apps: Extended Security Maintenance \(ESM\)
             esm-infra     yes        UA Infra: Extended Security Maintenance \(ESM\)
             fips          <fips>      +NIST-certified FIPS modules
             fips-updates  <fips>      +Uncertified security updates to FIPS modules
@@ -34,6 +35,7 @@ Feature: Unattached status
         Then stdout matches regexp:
             """
             SERVICE       AVAILABLE  DESCRIPTION
+            esm-apps      <esm-apps>  +UA Apps: Extended Security Maintenance \(ESM\)
             esm-infra     yes        UA Infra: Extended Security Maintenance \(ESM\)
             fips          <fips>      +NIST-certified FIPS modules
             fips-updates  <fips>      +Uncertified security updates to FIPS modules
