@@ -95,6 +95,12 @@ def _write_template_or_remove(msg: str, tmpl_file: str):
             util.remove_file(tmpl_file.replace(".tmpl", ""))
 
 
+def _remove_msg_templates(msg_dir: "str", msg_template_names: "List[str]"):
+    # Purge all template out output messages for this service
+    for name in msg_template_names:
+        _write_template_or_remove("", os.path.join(msg_dir, name))
+
+
 def _write_esm_service_msg_templates(
     cfg: config.UAConfig,
     ent: entitlements.base.UAEntitlement,
@@ -104,7 +110,6 @@ def _write_esm_service_msg_templates(
     no_pkgs_file: str,
     motd_pkgs_file: str,
     motd_no_pkgs_file: str,
-    remove_template_files: bool = False,
 ):
     """Write any related template content for an ESM service.
 
@@ -117,22 +122,11 @@ def _write_esm_service_msg_templates(
     :param remaining_days: Int remaining days on contrat, negative when
         expired.
     :param *_file: template file names to write.
-
-    :param remove_template files: True when all related template should be
-        removed.
     """
     pkgs_msg = no_pkgs_msg = motd_pkgs_msg = motd_no_pkgs_msg = ""
     tmpl_prefix = ent.name.upper().replace("-", "_")
     tmpl_pkg_count_var = "{{{}_PKG_COUNT}}".format(tmpl_prefix)
     tmpl_pkg_names_var = "{{{}_PACKAGES}}".format(tmpl_prefix)
-    msg_dir = os.path.join(cfg.data_dir, "messages")
-    if remove_template_files:
-        # Purge all template out output messages for this service
-        _write_template_or_remove("", os.path.join(msg_dir, no_pkgs_file))
-        _write_template_or_remove("", os.path.join(msg_dir, pkgs_file))
-        _write_template_or_remove("", os.path.join(msg_dir, motd_no_pkgs_file))
-        _write_template_or_remove("", os.path.join(msg_dir, motd_pkgs_file))
-        return
 
     platform_info = util.get_platform_info()
     is_active_esm = util.is_active_esm(platform_info["series"])
@@ -195,6 +189,7 @@ def _write_esm_service_msg_templates(
             title=ent.title, url=ua_esm_url
         )
 
+    msg_dir = os.path.join(cfg.data_dir, "messages")
     _write_template_or_remove(no_pkgs_msg, os.path.join(msg_dir, no_pkgs_file))
     _write_template_or_remove(pkgs_msg, os.path.join(msg_dir, pkgs_file))
     _write_template_or_remove(
@@ -237,47 +232,67 @@ def write_apt_and_motd_templates(cfg: config.UAConfig, series: str) -> None:
     msg_esm_apps = False
     msg_esm_infra = False
     if util.is_active_esm(series):
+        no_warranty_msg = ""
         if expiry_status in (
             ContractExpiryStatus.EXPIRED,
             ContractExpiryStatus.NONE,
         ):
             no_warranty_msg = MESSAGE_UBUNTU_NO_WARRANTY
-        else:
-            no_warranty_msg = ""
+        if infra_inst.application_status()[0] != enabled_status:
+            msg_esm_infra = True
+            no_warranty_msg = MESSAGE_UBUNTU_NO_WARRANTY
+        elif remaining_days <= defaults.CONTRACT_EXPIRY_PENDING_DAYS:
+            msg_esm_infra = True
         _write_template_or_remove(
             no_warranty_msg, os.path.join(msg_dir, no_warranty_file)
         )
-        if infra_inst.application_status()[0] != enabled_status:
-            msg_esm_infra = True
-        elif remaining_days <= defaults.CONTRACT_EXPIRY_PENDING_DAYS:
-            msg_esm_infra = True
     if not msg_esm_infra and series != "trusty":
         # write_apt_and_motd_templates is only called if util.is_lts(series)
         msg_esm_apps = apps_valid
 
-    _write_esm_service_msg_templates(
-        cfg,
-        infra_inst,
-        expiry_status,
-        remaining_days,
-        infra_pkg_file,
-        infra_no_pkg_file,
-        motd_infra_pkg_file,
-        motd_infra_no_pkg_file,
-        remove_template_files=not msg_esm_infra,
-    )
+    if msg_esm_infra:
+        _write_esm_service_msg_templates(
+            cfg,
+            infra_inst,
+            expiry_status,
+            remaining_days,
+            infra_pkg_file,
+            infra_no_pkg_file,
+            motd_infra_pkg_file,
+            motd_infra_no_pkg_file,
+        )
+    else:
+        _remove_msg_templates(
+            msg_dir=os.path.join(cfg.data_dir, "messages"),
+            msg_template_names=[
+                infra_pkg_file,
+                infra_no_pkg_file,
+                motd_infra_pkg_file,
+                motd_infra_no_pkg_file,
+            ],
+        )
 
-    _write_esm_service_msg_templates(
-        cfg,
-        apps_inst,
-        expiry_status,
-        remaining_days,
-        apps_pkg_file,
-        apps_no_pkg_file,
-        motd_apps_pkg_file,
-        motd_apps_no_pkg_file,
-        remove_template_files=not msg_esm_apps,
-    )
+    if msg_esm_apps:
+        _write_esm_service_msg_templates(
+            cfg,
+            apps_inst,
+            expiry_status,
+            remaining_days,
+            apps_pkg_file,
+            apps_no_pkg_file,
+            motd_apps_pkg_file,
+            motd_apps_no_pkg_file,
+        )
+    else:
+        _remove_msg_templates(
+            msg_dir=os.path.join(cfg.data_dir, "messages"),
+            msg_template_names=[
+                apps_pkg_file,
+                apps_no_pkg_file,
+                motd_apps_pkg_file,
+                motd_apps_no_pkg_file,
+            ],
+        )
 
 
 def write_esm_announcement_message(cfg: config.UAConfig, series: str) -> None:

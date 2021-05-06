@@ -65,13 +65,16 @@ class TestGetContractExpiryStatus:
 
 class TestWriteAPTAndMOTDTemplates:
     @pytest.mark.parametrize(
-        "is_active_esm,contract_expiry_status,no_warranty",
+        "is_active_esm,contract_expiry_status,infra_enabled, no_warranty",
         (
-            (True, ContractExpiryStatus.EXPIRED, True),
-            (True, ContractExpiryStatus.NONE, True),
-            (True, ContractExpiryStatus.ACTIVE, False),
-            (True, ContractExpiryStatus.EXPIRED_GRACE_PERIOD, False),
-            (True, ContractExpiryStatus.ACTIVE_EXPIRED_SOON, False),
+            (True, ContractExpiryStatus.EXPIRED, True, True),
+            (True, ContractExpiryStatus.NONE, False, True),
+            (True, ContractExpiryStatus.ACTIVE, True, False),
+            (True, ContractExpiryStatus.EXPIRED_GRACE_PERIOD, False, True),
+            (True, ContractExpiryStatus.ACTIVE_EXPIRED_SOON, False, True),
+            (True, ContractExpiryStatus.ACTIVE, False, True),
+            (True, ContractExpiryStatus.EXPIRED_GRACE_PERIOD, True, False),
+            (True, ContractExpiryStatus.ACTIVE_EXPIRED_SOON, True, False),
         ),
     )
     @mock.patch(M_PATH + "entitlements")
@@ -86,13 +89,21 @@ class TestWriteAPTAndMOTDTemplates:
         entitlements,
         is_active_esm,
         contract_expiry_status,
+        infra_enabled,
         no_warranty,
         FakeConfig,
     ):
         util_is_active_esm.return_value = is_active_esm
+        if infra_enabled:
+            infra_status = ApplicationStatus.ENABLED
+        else:
+            infra_status = ApplicationStatus.DISABLED
+        infra_cls = mock.MagicMock()
+        infra_obj = infra_cls.return_value
+        infra_obj.application_status.return_value = (infra_status, "")
         entitlements.ENTITLEMENT_CLASS_BY_NAME = {
             "esm-apps": mock.MagicMock(),
-            "esm-infra": mock.MagicMock(),
+            "esm-infra": infra_cls,
         }
         get_contract_expiry_status.return_value = (
             contract_expiry_status,
@@ -134,6 +145,7 @@ class TestWriteAPTAndMOTDTemplates:
         ),
     )
     @mock.patch(M_PATH + "entitlements")
+    @mock.patch(M_PATH + "_remove_msg_templates")
     @mock.patch(M_PATH + "_write_esm_service_msg_templates")
     @mock.patch(M_PATH + "util.is_active_esm")
     @mock.patch(M_PATH + "get_contract_expiry_status")
@@ -142,6 +154,7 @@ class TestWriteAPTAndMOTDTemplates:
         get_contract_expiry_status,
         util_is_active_esm,
         write_esm_service_templates,
+        remove_msg_templates,
         entitlements,
         series,
         is_active_esm,
@@ -180,34 +193,64 @@ class TestWriteAPTAndMOTDTemplates:
             "esm-infra": infra_cls,
         }
         cfg = FakeConfig.for_attached_machine()
+        os.makedirs(os.path.join(cfg.data_dir, "messages"))
         if cfg_allow_beta:
             cfg.override_features({"allow_beta": cfg_allow_beta})
-        write_calls = [
-            mock.call(
-                cfg,
-                mock.ANY,
-                ContractExpiryStatus.ACTIVE,
-                contract_days,
-                ExternalMessage.APT_PRE_INVOKE_INFRA_PKGS.value,
-                ExternalMessage.APT_PRE_INVOKE_INFRA_NO_PKGS.value,
-                ExternalMessage.MOTD_INFRA_PKGS.value,
-                ExternalMessage.MOTD_INFRA_NO_PKGS.value,
-                remove_template_files=not show_infra,
-            ),
-            mock.call(
-                cfg,
-                mock.ANY,
-                ContractExpiryStatus.ACTIVE,
-                contract_days,
-                ExternalMessage.APT_PRE_INVOKE_APPS_PKGS.value,
-                ExternalMessage.APT_PRE_INVOKE_APPS_NO_PKGS.value,
-                ExternalMessage.MOTD_APPS_PKGS.value,
-                ExternalMessage.MOTD_APPS_NO_PKGS.value,
-                remove_template_files=not show_apps,
-            ),
-        ]
+        write_calls = []
+        remove_calls = []
+        if show_infra:
+            write_calls.append(
+                mock.call(
+                    cfg,
+                    mock.ANY,
+                    ContractExpiryStatus.ACTIVE,
+                    contract_days,
+                    ExternalMessage.APT_PRE_INVOKE_INFRA_PKGS.value,
+                    ExternalMessage.APT_PRE_INVOKE_INFRA_NO_PKGS.value,
+                    ExternalMessage.MOTD_INFRA_PKGS.value,
+                    ExternalMessage.MOTD_INFRA_NO_PKGS.value,
+                )
+            )
+        else:
+            remove_calls.append(
+                mock.call(
+                    msg_dir=os.path.join(cfg.data_dir, "messages"),
+                    msg_template_names=[
+                        ExternalMessage.APT_PRE_INVOKE_INFRA_PKGS.value,
+                        ExternalMessage.APT_PRE_INVOKE_INFRA_NO_PKGS.value,
+                        ExternalMessage.MOTD_INFRA_PKGS.value,
+                        ExternalMessage.MOTD_INFRA_NO_PKGS.value,
+                    ],
+                )
+            )
+        if show_apps:
+            write_calls.append(
+                mock.call(
+                    cfg,
+                    mock.ANY,
+                    ContractExpiryStatus.ACTIVE,
+                    contract_days,
+                    ExternalMessage.APT_PRE_INVOKE_APPS_PKGS.value,
+                    ExternalMessage.APT_PRE_INVOKE_APPS_NO_PKGS.value,
+                    ExternalMessage.MOTD_APPS_PKGS.value,
+                    ExternalMessage.MOTD_APPS_NO_PKGS.value,
+                )
+            )
+        else:
+            remove_calls.append(
+                mock.call(
+                    msg_dir=os.path.join(cfg.data_dir, "messages"),
+                    msg_template_names=[
+                        ExternalMessage.APT_PRE_INVOKE_APPS_PKGS.value,
+                        ExternalMessage.APT_PRE_INVOKE_APPS_NO_PKGS.value,
+                        ExternalMessage.MOTD_APPS_PKGS.value,
+                        ExternalMessage.MOTD_APPS_NO_PKGS.value,
+                    ],
+                )
+            )
         write_apt_and_motd_templates(cfg, series)
         assert [mock.call(cfg)] == get_contract_expiry_status.call_args_list
+        assert remove_calls == remove_msg_templates.call_args_list
         assert write_calls == write_esm_service_templates.call_args_list
 
 
@@ -329,31 +372,31 @@ class Test_WriteESMServiceAPTMsgTemplates:
                 ContractExpiryStatus.ACTIVE,
                 21,
                 True,
-                {"series": "xenial", "releaes": "16.04"},
+                {"series": "xenial", "release": "16.04"},
             ),
             (
                 ContractExpiryStatus.ACTIVE_EXPIRED_SOON,
                 10,
                 True,
-                {"series": "xenial", "releaes": "16.04"},
+                {"series": "xenial", "release": "16.04"},
             ),
             (
                 ContractExpiryStatus.EXPIRED_GRACE_PERIOD,
                 -5,
                 True,
-                {"series": "xenial", "releaes": "16.04"},
+                {"series": "xenial", "release": "16.04"},
             ),
             (
                 ContractExpiryStatus.EXPIRED,
                 -20,
                 True,
-                {"series": "xenial", "releaes": "16.04"},
+                {"series": "xenial", "release": "16.04"},
             ),
             (
                 ContractExpiryStatus.EXPIRED,
                 -20,
                 False,
-                {"series": "xenial", "releaes": "16.04"},
+                {"series": "xenial", "release": "16.04"},
             ),
         ),
     )
