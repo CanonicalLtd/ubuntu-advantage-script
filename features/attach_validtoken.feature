@@ -11,10 +11,15 @@ Feature: Command behaviour when attaching a machine to an Ubuntu Advantage
         When I run `apt-get update` with sudo, retrying exit [100]
         And I run `apt-get install -y <downrev_pkg>` with sudo, retrying exit [100]
         And I run `run-parts /etc/update-motd.d/` with sudo
-        Then if `<release>` in `xenial or bionic` and stdout matches regexp:
+        Then if `<release>` in `xenial` and stdout matches regexp:
         """
         \d+ package(s)? can be updated.
         \d+ of these updates (is a|are) security update(s)?.
+        """
+        Then if `<release>` in `bionic` and stdout matches regexp:
+        """
+        \d+ update(s)? can be applied immediately.
+        \d+ of these updates (is a|are) standard security update(s)?.
         """
         Then if `<release>` in `focal` and stdout matches regexp:
         """
