@@ -153,6 +153,10 @@ class TestActionEnable:
             "testitlement": m_entitlement_cls
         }
         m_entitlement_obj = m_entitlement_cls.return_value
+        m_entitlement_obj.application_status.return_value = (
+            status.ApplicationStatus.DISABLED,
+            None,
+        )
         m_entitlement_obj.enable.return_value = True
 
         cfg = FakeConfig.for_attached_machine()
@@ -186,18 +190,30 @@ class TestActionEnable:
 
         m_ent1_cls = mock.Mock()
         m_ent1_obj = m_ent1_cls.return_value
+        m_ent1_obj.application_status.return_value = (
+            status.ApplicationStatus.DISABLED,
+            None,
+        )
         m_ent1_obj.enable.return_value = False
 
         m_ent2_cls = mock.Mock()
         m_ent2_is_beta = mock.PropertyMock(return_value=False)
         type(m_ent2_cls).is_beta = m_ent2_is_beta
         m_ent2_obj = m_ent2_cls.return_value
+        m_ent2_obj.application_status.return_value = (
+            status.ApplicationStatus.DISABLED,
+            None,
+        )
         m_ent2_obj.enable.return_value = False
 
         m_ent3_cls = mock.Mock()
         m_ent3_is_beta = mock.PropertyMock(return_value=False)
         type(m_ent3_cls).is_beta = m_ent3_is_beta
         m_ent3_obj = m_ent3_cls.return_value
+        m_ent3_obj.application_status.return_value = (
+            status.ApplicationStatus.DISABLED,
+            None,
+        )
         m_ent3_obj.enable.return_value = True
 
         m_entitlements.ENTITLEMENT_CLASS_BY_NAME = {
@@ -264,18 +280,30 @@ class TestActionEnable:
 
         m_ent1_cls = mock.Mock()
         m_ent1_obj = m_ent1_cls.return_value
+        m_ent1_obj.application_status.return_value = (
+            status.ApplicationStatus.DISABLED,
+            None,
+        )
         m_ent1_obj.enable.return_value = False
 
         m_ent2_cls = mock.Mock()
         m_ent2_is_beta = mock.PropertyMock(return_value=True)
         type(m_ent2_cls).is_beta = m_ent2_is_beta
         m_ent2_obj = m_ent2_cls.return_value
+        m_ent2_obj.application_status.return_value = (
+            status.ApplicationStatus.DISABLED,
+            None,
+        )
         m_ent2_obj.enable.return_value = False
 
         m_ent3_cls = mock.Mock()
         m_ent3_is_beta = mock.PropertyMock(return_value=False)
         type(m_ent3_cls).is_beta = m_ent3_is_beta
         m_ent3_obj = m_ent3_cls.return_value
+        m_ent3_obj.application_status.return_value = (
+            status.ApplicationStatus.DISABLED,
+            None,
+        )
         m_ent3_obj.enable.return_value = True
 
         m_entitlements.ENTITLEMENT_CLASS_BY_NAME = {
@@ -407,6 +435,11 @@ class TestPerformEnable:
         type(m_cfg).cfg = m_user_cfg
         m_is_beta = mock.PropertyMock(return_value=allow_beta)
         type(m_entitlement_cls).is_beta = m_is_beta
+        m_entitlement_obj = m_entitlement_cls.return_value
+        m_entitlement_obj.application_status.return_value = (
+            status.ApplicationStatus.DISABLED,
+            None,
+        )
 
         m_entitlements.ENTITLEMENT_CLASS_BY_NAME = {
             "testitlement": m_entitlement_cls
@@ -444,6 +477,11 @@ class TestPerformEnable:
         type(m_cfg).cfg = m_user_cfg
         m_is_beta = mock.PropertyMock(return_value=True)
         type(m_entitlement_cls).is_beta = m_is_beta
+        m_entitlement_obj = m_entitlement_cls.return_value
+        m_entitlement_obj.application_status.return_value = (
+            status.ApplicationStatus.DISABLED,
+            None,
+        )
 
         m_entitlements.ENTITLEMENT_CLASS_BY_NAME = {
             "testitlement": m_entitlement_cls
@@ -477,6 +515,59 @@ class TestPerformEnable:
 
         m_is_beta = mock.PropertyMock(return_value=True)
         type(m_entitlement_cls).is_beta = m_is_beta
+        m_entitlement_obj = m_entitlement_cls.return_value
+        m_entitlement_obj.application_status.return_value = (
+            status.ApplicationStatus.DISABLED,
+            None,
+        )
+
+        m_entitlements.ENTITLEMENT_CLASS_BY_NAME = {
+            ent_name: m_entitlement_cls
+        }
+
+        kwargs = {"allow_beta": False}
+        if silent_if_inapplicable is not None:
+            kwargs["silent_if_inapplicable"] = silent_if_inapplicable
+        ret = _perform_enable(ent_name, m_cfg, **kwargs)
+
+        assert [
+            mock.call(m_cfg, assume_yes=False)
+        ] == m_entitlement_cls.call_args_list
+
+        m_entitlement = m_entitlement_cls.return_value
+        if silent_if_inapplicable:
+            expected_enable_call = mock.call(silent_if_inapplicable=True)
+        else:
+            expected_enable_call = mock.call(silent_if_inapplicable=False)
+        assert [expected_enable_call] == m_entitlement.enable.call_args_list
+        assert ret == m_entitlement.enable.return_value
+
+        assert 1 == m_cfg.status.call_count
+        assert 0 == m_is_beta.call_count
+        assert 1 == m_cfg_dict.call_count
+
+    @pytest.mark.parametrize("silent_if_inapplicable", (True, False, None))
+    @mock.patch("uaclient.contract.get_available_resources", return_value={})
+    @mock.patch("uaclient.cli.entitlements")
+    def test_beta_entitlement_instantiated_and_enabled_when_already_enabled(
+        self,
+        m_entitlements,
+        _m_get_available_resources,
+        silent_if_inapplicable,
+    ):
+        ent_name = "testitlement"
+        m_entitlement_cls = mock.Mock()
+        m_cfg = mock.Mock()
+        m_cfg_dict = mock.PropertyMock(return_value={})
+        type(m_cfg).cfg = m_cfg_dict
+
+        m_is_beta = mock.PropertyMock(return_value=True)
+        type(m_entitlement_cls).is_beta = m_is_beta
+        m_entitlement_obj = m_entitlement_cls.return_value
+        m_entitlement_obj.application_status.return_value = (
+            status.ApplicationStatus.ENABLED,
+            None,
+        )
 
         m_entitlements.ENTITLEMENT_CLASS_BY_NAME = {
             ent_name: m_entitlement_cls

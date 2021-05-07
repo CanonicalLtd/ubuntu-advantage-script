@@ -536,11 +536,19 @@ def _perform_enable(
     @return: True on success, False otherwise
     """
     ent_cls = entitlements.ENTITLEMENT_CLASS_BY_NAME[entitlement_name]
+    entitlement = ent_cls(cfg, assume_yes=assume_yes)
+
+    # already enabled messaging is handled by ent.can_enable but we check here
+    # so we can get past the BetaServiceError if a beta service is enabled
+    # TODO consider moving the beta messaging into ent.can_enable as well?
+    application_status, _ = entitlement.application_status()
+    already_enabled = application_status == ua_status.ApplicationStatus.ENABLED
+
     config_allow_beta = util.is_config_value_true(
         config=cfg.cfg, path_to_value="features.allow_beta"
     )
     allow_beta |= config_allow_beta
-    if not allow_beta and ent_cls.is_beta:
+    if not already_enabled and not allow_beta and ent_cls.is_beta:
         tmpl = ua_status.MESSAGE_INVALID_SERVICE_OP_FAILURE_TMPL
         raise exceptions.BetaServiceError(
             tmpl.format(
@@ -550,7 +558,6 @@ def _perform_enable(
             )
         )
 
-    entitlement = ent_cls(cfg, assume_yes=assume_yes)
     ret = entitlement.enable(silent_if_inapplicable=silent_if_inapplicable)
     cfg.status()  # Update the status cache
     return ret
