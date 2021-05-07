@@ -14,7 +14,9 @@ M_REPOPATH = "uaclient.entitlements.repo."
 
 @pytest.fixture
 def entitlement(entitlement_factory):
-    return entitlement_factory(CISEntitlement, additional_packages=["pkg1"])
+    return entitlement_factory(
+        CISEntitlement, allow_beta=True, additional_packages=["pkg1"]
+    )
 
 
 class TestCISEntitlementCanEnable:

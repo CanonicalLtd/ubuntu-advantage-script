@@ -741,7 +741,6 @@ def _format_packages_message(
         width=PRINT_WRAP_WIDTH,
         subsequent_indent="    ",
     )
-
     return "{}\n{}".format(msg_header, pkg_status.status_message)
 
 
@@ -767,11 +766,7 @@ def _is_pocket_used_by_beta_service(pocket: str, cfg: UAConfig) -> bool:
         if ent_status == status.UserFacingStatus.ACTIVE:
             return False
 
-        config_allow_beta = util.is_config_value_true(
-            config=cfg.cfg, path_to_value="features.allow_beta"
-        )
-
-        return all([ent.is_beta, not config_allow_beta])
+        return ent.is_beta
 
     return False
 

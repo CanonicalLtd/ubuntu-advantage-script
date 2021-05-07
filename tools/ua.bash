@@ -1,6 +1,9 @@
 # bash completion for ubuntu-advantage-tools
 
-SERVICES="cc-eal cis-audit esm-infra fips fips-updates livepatch"
+SERVICES=$(python3 -c "
+from uaclient.entitlements import valid_services
+print(*valid_services(), sep=' ')
+")
 
 _ua_complete()
 {

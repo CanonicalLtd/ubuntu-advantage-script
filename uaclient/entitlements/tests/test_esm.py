@@ -70,8 +70,10 @@ class TestESMRepoPinPriority:
     )
     @mock.patch("uaclient.util.is_lts")
     @mock.patch("uaclient.entitlements.esm.util.get_platform_info")
+    @mock.patch("uaclient.entitlements.UAConfig")
     def test_esm_apps_repo_pin_priority_never_on_on_lts(
         self,
+        m_cfg,
         m_get_platform_info,
         m_is_lts,
         series,
@@ -94,10 +96,12 @@ class TestESMRepoPinPriority:
         cfg = FakeConfig.for_attached_machine()
         if cfg_allow_beta:
             cfg.override_features({"allow_beta": cfg_allow_beta})
+        m_cfg.return_value = cfg
 
         inst = ESMAppsEntitlement(cfg)
-        inst.is_beta = is_beta
-        assert repo_pin_priority == inst.repo_pin_priority
+        with mock.patch.object(ESMAppsEntitlement, "is_beta", is_beta):
+            assert repo_pin_priority == inst.repo_pin_priority
+
         is_lts_calls = []
         if series != "trusty":
             if cfg_allow_beta or not is_beta:
@@ -146,8 +150,10 @@ class TestESMDisableAptAuthOnly:
     )
     @mock.patch("uaclient.util.is_lts")
     @mock.patch("uaclient.entitlements.esm.util.get_platform_info")
+    @mock.patch("uaclient.entitlements.UAConfig")
     def test_esm_apps_disable_apt_auth_only_is_true_on_lts(
         self,
+        m_cfg,
         m_get_platform_info,
         m_is_lts,
         series,
@@ -162,10 +168,13 @@ class TestESMDisableAptAuthOnly:
         cfg = FakeConfig.for_attached_machine()
         if cfg_allow_beta:
             cfg.override_features({"allow_beta": cfg_allow_beta})
+        m_cfg.return_value = cfg
 
         inst = ESMAppsEntitlement(cfg)
-        inst.is_beta = is_beta
-        assert disable_apt_auth_only is inst.disable_apt_auth_only
+        with mock.patch.object(ESMAppsEntitlement, "is_beta", is_beta):
+            print(is_beta, cfg_allow_beta)
+            print(inst.valid_service)
+            assert disable_apt_auth_only is inst.disable_apt_auth_only
         is_lts_calls = []
         if series != "trusty":
             if cfg_allow_beta or not is_beta:

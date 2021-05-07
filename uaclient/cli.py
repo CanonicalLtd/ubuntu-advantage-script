@@ -296,7 +296,7 @@ def help_parser(parser):
         action="store",
         nargs="?",
         help="a service to view help output for. One of: {}".format(
-            entitlements.RELEASED_ENTITLEMENTS_STR
+            ", ".join(entitlements.valid_services())
         ),
     )
 
@@ -337,7 +337,7 @@ def enable_parser(parser):
         nargs="+",
         help=(
             "the name(s) of the Ubuntu Advantage services to enable."
-            " One of: {}".format(entitlements.RELEASED_ENTITLEMENTS_STR)
+            " One of: {}".format(", ".join(entitlements.valid_services()))
         ),
     )
     parser.add_argument(
@@ -367,7 +367,7 @@ def disable_parser(parser):
         nargs="+",
         help=(
             "the name(s) of the Ubuntu Advantage services to disable"
-            " One of: {}".format(entitlements.RELEASED_ENTITLEMENTS_STR)
+            " One of: {}".format(", ".join(entitlements.valid_services()))
         ),
     )
     parser.add_argument(
@@ -496,7 +496,11 @@ def action_disable(args, cfg, **kwargs):
         ret &= _perform_disable(entitlement, cfg, assume_yes=args.assume_yes)
 
     if entitlements_not_found:
-        valid_names = "Try " + entitlements.ALL_ENTITLEMENTS_STR + "."
+        valid_names = (
+            "Try "
+            + ", ".join(entitlements.valid_services(allow_beta=True))
+            + "."
+        )
         service_msg = "\n".join(
             textwrap.wrap(valid_names, width=80, break_long_words=False)
         )
@@ -536,21 +540,7 @@ def _perform_enable(
     @return: True on success, False otherwise
     """
     ent_cls = entitlements.ENTITLEMENT_CLASS_BY_NAME[entitlement_name]
-    config_allow_beta = util.is_config_value_true(
-        config=cfg.cfg, path_to_value="features.allow_beta"
-    )
-    allow_beta |= config_allow_beta
-    if not allow_beta and ent_cls.is_beta:
-        tmpl = ua_status.MESSAGE_INVALID_SERVICE_OP_FAILURE_TMPL
-        raise exceptions.BetaServiceError(
-            tmpl.format(
-                operation="enable",
-                name=entitlement_name,
-                service_msg="Beta services enabled with --beta param",
-            )
-        )
-
-    entitlement = ent_cls(cfg, assume_yes=assume_yes)
+    entitlement = ent_cls(cfg, assume_yes=assume_yes, allow_beta=allow_beta)
     ret = entitlement.enable(silent_if_inapplicable=silent_if_inapplicable)
     cfg.status()  # Update the status cache
     return ret
@@ -575,26 +565,27 @@ def action_enable(args, cfg, **kwargs):
     entitlements_found, entitlements_not_found = get_valid_entitlement_names(
         names
     )
+    valid_services_names = entitlements.valid_services(allow_beta=args.beta)
     ret = True
 
     for entitlement in entitlements_found:
         try:
-            ret &= _perform_enable(
+            ent_ret = _perform_enable(
                 entitlement,
                 cfg,
                 assume_yes=args.assume_yes,
                 allow_beta=args.beta,
             )
-        except exceptions.BetaServiceError:
-            entitlements_not_found.append(entitlement)
+
+            if not ent_ret and entitlement not in valid_services_names:
+                entitlements_not_found.append(entitlement)
+
+            ret &= ent_ret
         except exceptions.UserFacingError as e:
             print(e)
 
     if entitlements_not_found:
-        if args.beta:
-            valid_names = entitlements.ALL_ENTITLEMENTS_STR
-        else:
-            valid_names = entitlements.RELEASED_ENTITLEMENTS_STR
+        valid_names = ", ".join(valid_services_names)
         service_msg = "\n".join(
             textwrap.wrap(
                 "Try " + valid_names + ".", width=80, break_long_words=False

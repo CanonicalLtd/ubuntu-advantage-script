@@ -41,10 +41,8 @@ class ESMAppsEntitlement(ESMBaseEntitlement):
         series = util.get_platform_info()["series"]
         if series == "trusty":
             return None
-        config_allow_beta = util.is_config_value_true(
-            config=self.cfg.cfg, path_to_value="features.allow_beta"
-        )
-        if config_allow_beta or self.is_beta is False:
+
+        if self.valid_service:
             if util.is_lts(series):
                 return "never"
         return None
@@ -55,10 +53,8 @@ class ESMAppsEntitlement(ESMBaseEntitlement):
         series = util.get_platform_info()["series"]
         if series == "trusty":
             return False
-        config_allow_beta = util.is_config_value_true(
-            config=self.cfg.cfg, path_to_value="features.allow_beta"
-        )
-        if config_allow_beta or self.is_beta is False:
+
+        if self.valid_service:
             return util.is_lts(series)
         return False
 
