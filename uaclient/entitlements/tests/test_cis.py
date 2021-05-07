@@ -6,7 +6,11 @@ import pytest
 
 from uaclient import apt
 from uaclient import status
-from uaclient.entitlements.cis import CISEntitlement
+from uaclient.entitlements.cis import (
+    CISEntitlement,
+    CIS_AUDIT_README,
+    CIS_HARDENING_README,
+)
 
 
 M_REPOPATH = "uaclient.entitlements.repo."
@@ -105,5 +109,8 @@ class TestCISEntitlementEnable:
             "Updating package lists\n"
             "Installing CIS Audit packages\n"
             "CIS Audit enabled\n"
+            "Refer to {} on how to run an audit scan of the system\n"
+            "Refer to {} on how to harden the system to the desired CIS "
+            "compliance level\n".format(CIS_AUDIT_README, CIS_HARDENING_README)
         )
         assert (expected_stdout, "") == capsys.readouterr()
