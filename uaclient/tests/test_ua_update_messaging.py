@@ -65,43 +65,120 @@ class TestGetContractExpiryStatus:
 
 class TestWriteAPTAndMOTDTemplates:
     @pytest.mark.parametrize(
-        "series,is_active_esm,esm_apps_beta,esm_infra_enabled,cfg_allow_beta",
+        "is_active_esm,contract_expiry_status,infra_enabled, no_warranty",
         (
-            ("xenial", True, True, True, None),
-            ("xenial", True, True, False, None),
-            ("xenial", True, False, True, None),
-            ("xenial", False, True, False, None),
-            ("xenial", True, True, True, True),
-            ("xenial", True, True, False, True),
+            (True, ContractExpiryStatus.EXPIRED, True, True),
+            (True, ContractExpiryStatus.NONE, False, True),
+            (True, ContractExpiryStatus.ACTIVE, True, False),
+            (True, ContractExpiryStatus.EXPIRED_GRACE_PERIOD, False, True),
+            (True, ContractExpiryStatus.ACTIVE_EXPIRED_SOON, False, True),
+            (True, ContractExpiryStatus.ACTIVE, False, True),
+            (True, ContractExpiryStatus.EXPIRED_GRACE_PERIOD, True, False),
+            (True, ContractExpiryStatus.ACTIVE_EXPIRED_SOON, True, False),
         ),
     )
     @mock.patch(M_PATH + "entitlements")
     @mock.patch(M_PATH + "_write_esm_service_msg_templates")
     @mock.patch(M_PATH + "util.is_active_esm")
     @mock.patch(M_PATH + "get_contract_expiry_status")
-    def test_write_apps_and_infra_services(
+    def test_write_apps_or_infra_services_emits_no_warranty(
         self,
         get_contract_expiry_status,
         util_is_active_esm,
         write_esm_service_templates,
         entitlements,
-        series,
         is_active_esm,
-        esm_apps_beta,
-        esm_infra_enabled,
-        cfg_allow_beta,
+        contract_expiry_status,
+        infra_enabled,
+        no_warranty,
         FakeConfig,
     ):
-        """Write both Infra and Apps when not-beta service."""
+        util_is_active_esm.return_value = is_active_esm
+        if infra_enabled:
+            infra_status = ApplicationStatus.ENABLED
+        else:
+            infra_status = ApplicationStatus.DISABLED
+        infra_cls = mock.MagicMock()
+        infra_obj = infra_cls.return_value
+        infra_obj.application_status.return_value = (infra_status, "")
+        entitlements.ENTITLEMENT_CLASS_BY_NAME = {
+            "esm-apps": mock.MagicMock(),
+            "esm-infra": infra_cls,
+        }
+        get_contract_expiry_status.return_value = (
+            contract_expiry_status,
+            -12355,  # unused in this test
+        )
+        cfg = FakeConfig.for_attached_machine()
+        msg_dir = os.path.join(cfg.data_dir, "messages")
+        os.makedirs(msg_dir)
+
+        write_apt_and_motd_templates(cfg, "xenial")
+        assert [mock.call("xenial")] == util_is_active_esm.call_args_list
+        no_warranty_file = os.path.join(msg_dir, "ubuntu-no-warranty")
+        if no_warranty:
+            assert MESSAGE_UBUNTU_NO_WARRANTY == util.load_file(
+                no_warranty_file
+            )
+        else:
+            assert False is os.path.exists(no_warranty_file)
+
+    @pytest.mark.parametrize(
+        "series,is_active_esm,contract_days,infra_enabled,"
+        "esm_apps_beta,cfg_allow_beta,show_infra,show_apps",
+        (
+            # Enabled infra, active contract, beta apps: show none
+            ("xenial", True, 21, True, True, None, False, False),
+            # Not enabled infra, beta apps: show infra msg
+            ("xenial", True, -21, False, True, None, True, False),
+            # Any *expired contract, infra enabled, beta apps: show infra msg
+            ("xenial", True, 20, True, True, None, True, False),
+            ("xenial", True, 0, True, True, None, True, False),
+            ("xenial", True, -1, True, True, None, True, False),
+            ("xenial", True, -21, True, True, None, True, False),
+            # Infra enabled, any *expired contract, allow_beta: show infra msg
+            ("xenial", True, 20, True, True, True, True, False),
+            # Infra enabled, active contract, allow_beta: show apps msg
+            ("xenial", True, 21, True, True, True, False, True),
+            # Infra enabled, active contract, apps not beta: show apps msg
+            ("xenial", True, 21, True, False, None, False, True),
+        ),
+    )
+    @mock.patch(M_PATH + "entitlements")
+    @mock.patch(M_PATH + "_remove_msg_templates")
+    @mock.patch(M_PATH + "_write_esm_service_msg_templates")
+    @mock.patch(M_PATH + "util.is_active_esm")
+    @mock.patch(M_PATH + "get_contract_expiry_status")
+    def test_write_apps_or_infra_services_mutually_exclusive(
+        self,
+        get_contract_expiry_status,
+        util_is_active_esm,
+        write_esm_service_templates,
+        remove_msg_templates,
+        entitlements,
+        series,
+        is_active_esm,
+        contract_days,
+        infra_enabled,
+        esm_apps_beta,
+        cfg_allow_beta,
+        show_infra,
+        show_apps,
+        FakeConfig,
+    ):
+        """Write Infra or Apps when Apps not-beta service.
+
+        Messaging is mutually exclusive, if Infra templates are emitted, don't
+        write Apps.
+        """
         get_contract_expiry_status.return_value = (
             ContractExpiryStatus.ACTIVE,
-            21,
+            contract_days,
         )
-
-        infra_status = ApplicationStatus.DISABLED
-        if esm_infra_enabled:
+        if infra_enabled:
             infra_status = ApplicationStatus.ENABLED
-
+        else:
+            infra_status = ApplicationStatus.DISABLED
         util_is_active_esm.return_value = is_active_esm
         infra_cls = mock.MagicMock()
         infra_obj = infra_cls.return_value
@@ -116,73 +193,149 @@ class TestWriteAPTAndMOTDTemplates:
             "esm-infra": infra_cls,
         }
         cfg = FakeConfig.for_attached_machine()
+        os.makedirs(os.path.join(cfg.data_dir, "messages"))
         if cfg_allow_beta:
             cfg.override_features({"allow_beta": cfg_allow_beta})
-        if cfg_allow_beta or not esm_apps_beta:
-            write_calls = [
-                mock.call(
-                    cfg,
-                    mock.ANY,
-                    ContractExpiryStatus.ACTIVE,
-                    21,
-                    ExternalMessage.APT_PRE_INVOKE_APPS_PKGS.value,
-                    ExternalMessage.APT_PRE_INVOKE_APPS_NO_PKGS.value,
-                    ExternalMessage.MOTD_APPS_PKGS.value,
-                    ExternalMessage.MOTD_APPS_NO_PKGS.value,
-                    ExternalMessage.UBUNTU_NO_WARRANTY.value,
-                )
-            ]
-        else:
-            write_calls = []
-        if esm_infra_enabled or is_active_esm:
+        write_calls = []
+        remove_calls = []
+        if show_infra:
             write_calls.append(
                 mock.call(
                     cfg,
                     mock.ANY,
                     ContractExpiryStatus.ACTIVE,
-                    21,
+                    contract_days,
                     ExternalMessage.APT_PRE_INVOKE_INFRA_PKGS.value,
                     ExternalMessage.APT_PRE_INVOKE_INFRA_NO_PKGS.value,
                     ExternalMessage.MOTD_INFRA_PKGS.value,
                     ExternalMessage.MOTD_INFRA_NO_PKGS.value,
-                    ExternalMessage.UBUNTU_NO_WARRANTY.value,
+                )
+            )
+        else:
+            remove_calls.append(
+                mock.call(
+                    msg_dir=os.path.join(cfg.data_dir, "messages"),
+                    msg_template_names=[
+                        ExternalMessage.APT_PRE_INVOKE_INFRA_PKGS.value,
+                        ExternalMessage.APT_PRE_INVOKE_INFRA_NO_PKGS.value,
+                        ExternalMessage.MOTD_INFRA_PKGS.value,
+                        ExternalMessage.MOTD_INFRA_NO_PKGS.value,
+                    ],
+                )
+            )
+        if show_apps:
+            write_calls.append(
+                mock.call(
+                    cfg,
+                    mock.ANY,
+                    ContractExpiryStatus.ACTIVE,
+                    contract_days,
+                    ExternalMessage.APT_PRE_INVOKE_APPS_PKGS.value,
+                    ExternalMessage.APT_PRE_INVOKE_APPS_NO_PKGS.value,
+                    ExternalMessage.MOTD_APPS_PKGS.value,
+                    ExternalMessage.MOTD_APPS_NO_PKGS.value,
+                )
+            )
+        else:
+            remove_calls.append(
+                mock.call(
+                    msg_dir=os.path.join(cfg.data_dir, "messages"),
+                    msg_template_names=[
+                        ExternalMessage.APT_PRE_INVOKE_APPS_PKGS.value,
+                        ExternalMessage.APT_PRE_INVOKE_APPS_NO_PKGS.value,
+                        ExternalMessage.MOTD_APPS_PKGS.value,
+                        ExternalMessage.MOTD_APPS_NO_PKGS.value,
+                    ],
                 )
             )
         write_apt_and_motd_templates(cfg, series)
         assert [mock.call(cfg)] == get_contract_expiry_status.call_args_list
+        assert remove_calls == remove_msg_templates.call_args_list
         assert write_calls == write_esm_service_templates.call_args_list
 
 
 class Test_WriteESMServiceAPTMsgTemplates:
     @pytest.mark.parametrize(
-        "contract_expiry, expect_messages",
+        "service_name,contract_expiry,expect_messages,platform_info,"
+        "eol_release,url",
         (
-            (ContractExpiryStatus.ACTIVE, True),
-            (ContractExpiryStatus.EXPIRED, False),
+            (
+                "esm-apps",
+                ContractExpiryStatus.ACTIVE,
+                True,
+                {"series": "xenial", "release": "16.04"},
+                "",
+                BASE_ESM_URL,
+            ),
+            (
+                "esm-infra",
+                ContractExpiryStatus.ACTIVE,
+                True,
+                {"series": "xenial", "release": "16.04"},
+                "for Ubuntu 16.04 ",
+                "https://ubuntu.com/16-04",
+            ),
+            (
+                "esm-apps",
+                ContractExpiryStatus.ACTIVE,
+                True,
+                {"series": "xenial", "release": "16.04"},
+                "",
+                BASE_ESM_URL,
+            ),
+            (
+                "esm-apps",
+                ContractExpiryStatus.EXPIRED,
+                False,
+                {"series": "xenial", "release": "16.04"},
+                "",
+                BASE_ESM_URL,
+            ),
         ),
     )
+    @mock.patch(M_PATH + "util.get_platform_info")
+    @mock.patch(M_PATH + "util.is_active_esm", return_value=True)
     @mock.patch(
         M_PATH + "entitlements.repo.RepoEntitlement.application_status"
     )
     def test_apt_templates_written_for_disabled_services(
-        self, app_status, contract_expiry, expect_messages, FakeConfig, tmpdir
+        self,
+        app_status,
+        util_is_active_esm,
+        get_platform_info,
+        service_name,
+        contract_expiry,
+        expect_messages,
+        platform_info,
+        eol_release,
+        url,
+        FakeConfig,
+        tmpdir,
     ):
         """Disabled service messages are omitted if contract expired.
 
         This represents customer chosen disabling of service on an attached
         machine. So, they've chosen to disable expired services.
         """
+        if service_name == "esm-infra":
+            title = "UA Infra: ESM"
+            pkg_count_var = "{ESM_INFRA_PKG_COUNT}"
+            pkg_names_var = "{ESM_INFRA_PACKAGES}"
+        else:
+            title = "UA Apps: ESM"
+            pkg_count_var = "{ESM_APPS_PKG_COUNT}"
+            pkg_names_var = "{ESM_APPS_PACKAGES}"
+        get_platform_info.return_value = platform_info
         m_entitlement_cls = mock.MagicMock()
         m_ent_obj = m_entitlement_cls.return_value
         disabled_status = ApplicationStatus.DISABLED, ""
         m_ent_obj.application_status.return_value = disabled_status
-        type(m_ent_obj).name = mock.PropertyMock(return_value="esm-apps")
-        type(m_ent_obj).title = mock.PropertyMock(return_value="UA Apps: ESM")
+        type(m_ent_obj).name = mock.PropertyMock(return_value=service_name)
+        type(m_ent_obj).title = mock.PropertyMock(return_value=title)
         pkgs_file = tmpdir.join("pkgs-msg")
         no_pkgs_file = tmpdir.join("no-pkgs-msg")
         motd_pkgs_file = tmpdir.join("motd-pkgs-msg")
         motd_no_pkgs_file = tmpdir.join("motd-no-pkgs-msg")
-        no_warranty_file = tmpdir.join("ubuntu-no-warranty")
         _write_esm_service_msg_templates(
             FakeConfig.for_attached_machine(),
             m_ent_obj,
@@ -192,22 +345,20 @@ class Test_WriteESMServiceAPTMsgTemplates:
             no_pkgs_file.strpath,
             motd_pkgs_file.strpath,
             motd_no_pkgs_file.strpath,
-            no_warranty_file.strpath,
         )
         if expect_messages:
             assert (
                 MESSAGE_DISABLED_APT_PKGS_TMPL.format(
-                    title="UA Apps: ESM",
-                    pkg_num="{ESM_APPS_PKG_COUNT}",
-                    pkg_names="{ESM_APPS_PACKAGES}",
-                    url=BASE_ESM_URL,
+                    title=title,
+                    pkg_num=pkg_count_var,
+                    pkg_names=pkg_names_var,
+                    eol_release=eol_release,
+                    url=url,
                 )
                 == pkgs_file.read()
             )
             assert (
-                MESSAGE_DISABLED_MOTD_NO_PKGS_TMPL.format(
-                    title="UA Apps: ESM", url=BASE_ESM_URL
-                )
+                MESSAGE_DISABLED_MOTD_NO_PKGS_TMPL.format(title=title, url=url)
                 == no_pkgs_file.read()
             )
         else:
@@ -215,15 +366,41 @@ class Test_WriteESMServiceAPTMsgTemplates:
             assert False is os.path.exists(no_pkgs_file.strpath)
 
     @pytest.mark.parametrize(
-        "contract_status, remaining_days, is_active_esm",
+        "contract_status, remaining_days, is_active_esm, platform_info",
         (
-            (ContractExpiryStatus.ACTIVE, 21, True),
-            (ContractExpiryStatus.ACTIVE_EXPIRED_SOON, 10, True),
-            (ContractExpiryStatus.EXPIRED_GRACE_PERIOD, -5, True),
-            (ContractExpiryStatus.EXPIRED, -20, True),
-            (ContractExpiryStatus.EXPIRED, -20, False),
+            (
+                ContractExpiryStatus.ACTIVE,
+                21,
+                True,
+                {"series": "xenial", "release": "16.04"},
+            ),
+            (
+                ContractExpiryStatus.ACTIVE_EXPIRED_SOON,
+                10,
+                True,
+                {"series": "xenial", "release": "16.04"},
+            ),
+            (
+                ContractExpiryStatus.EXPIRED_GRACE_PERIOD,
+                -5,
+                True,
+                {"series": "xenial", "release": "16.04"},
+            ),
+            (
+                ContractExpiryStatus.EXPIRED,
+                -20,
+                True,
+                {"series": "xenial", "release": "16.04"},
+            ),
+            (
+                ContractExpiryStatus.EXPIRED,
+                -20,
+                False,
+                {"series": "xenial", "release": "16.04"},
+            ),
         ),
     )
+    @mock.patch(M_PATH + "util.get_platform_info")
     @mock.patch(M_PATH + "util.is_active_esm")
     @mock.patch(
         M_PATH + "entitlements.repo.RepoEntitlement.application_status"
@@ -232,12 +409,15 @@ class Test_WriteESMServiceAPTMsgTemplates:
         self,
         app_status,
         util_is_active_esm,
+        get_platform_info,
         contract_status,
         remaining_days,
         is_active_esm,
+        platform_info,
         FakeConfig,
         tmpdir,
     ):
+        get_platform_info.return_value = platform_info
         util_is_active_esm.return_value = is_active_esm
         m_entitlement_cls = mock.MagicMock()
         m_ent_obj = m_entitlement_cls.return_value
@@ -249,7 +429,6 @@ class Test_WriteESMServiceAPTMsgTemplates:
         no_pkgs_tmpl = tmpdir.join("no-pkgs-msg.tmpl")
         motd_pkgs_tmpl = tmpdir.join("motd-pkgs-msg.tmpl")
         motd_no_pkgs_tmpl = tmpdir.join("motd-no-pkgs-msg.tmpl")
-        no_warranty_file = tmpdir.join("ubuntu-no-warranty")
         pkgs_tmpl.write("oldcache")
         no_pkgs_tmpl.write("oldcache")
         motd_pkgs_tmpl.write("oldcache")
@@ -276,7 +455,6 @@ class Test_WriteESMServiceAPTMsgTemplates:
             no_pkgs_tmpl.strpath,
             motd_pkgs_tmpl.strpath,
             motd_no_pkgs_tmpl.strpath,
-            no_warranty_file.strpath,
         )
         if contract_status == ContractExpiryStatus.ACTIVE:
             # Old messages removed on ACTIVE status
@@ -313,12 +491,8 @@ class Test_WriteESMServiceAPTMsgTemplates:
                 url=BASE_UA_URL,
             )
             no_pkgs_msg = MESSAGE_CONTRACT_EXPIRED_APT_NO_PKGS_TMPL.format(
-                title="UA Apps: ESM", url=BASE_ESM_URL
+                title="UA Apps: ESM", url=BASE_UA_URL
             )
-            if is_active_esm:
-                assert MESSAGE_UBUNTU_NO_WARRANTY == no_warranty_file.read()
-            else:
-                assert False is os.path.exists(no_warranty_file.strpath)
             assert pkgs_msg == pkgs_tmpl.read()
             assert no_pkgs_msg == no_pkgs_tmpl.read()
 
